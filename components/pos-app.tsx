@@ -5,20 +5,34 @@ import { useAuth, AuthProvider } from "@/lib/auth-context";
 import { initDB, seedSampleProducts } from "@/lib/db";
 import { LoginForm } from "./login-form";
 import { POSLayout } from "./pos-layout";
+import { supabase } from "@/lib/supabase";
+
+
+
+
 
 function POSContent() {
   const { user, isLoading } = useAuth();
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const [products,setProducts]= useState([]);
+
+
 
   useEffect(() => {
     const init = async () => {
       await initDB();
       await seedSampleProducts();
       setIsInitialized(true);
+      fetchProducts()
     };
     init();
   }, []);
 
+  async function fetchProducts() {
+    const {data,error}= await supabase.from('products').select('*')
+    
+  }
   if (!isInitialized || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">

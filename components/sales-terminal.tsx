@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/lib/supabase";
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -135,6 +136,7 @@ export function SalesTerminal() {
     if (!user) return;
 
     const sale: Sale = {
+
       id: crypto.randomUUID(),
       items: cart.map(({ productId, productName, quantity, price, total }) => ({
         productId,
@@ -153,6 +155,24 @@ export function SalesTerminal() {
       userName: user.name,
       createdAt: new Date(),
     };
+
+    await supabase.from("orders").insert({
+      id: sale.id,
+      total:sale.total,
+      payment_method:sale.paymentMethod,
+      user_id:sale.userId,
+      created_at:sale.createdAt,
+    });
+
+    await supabase.from("orders_item").insert(
+      cart.map((item) => ({
+      order_id: sale.id,
+      product_id:item.productId,
+      quantity:item.quantity,
+      price:item.price
+    }))
+    );
+    
 
     // Save sale
     await SaleDB.add(sale);
