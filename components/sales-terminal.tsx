@@ -1,11 +1,24 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ProductDB, SaleDB, StockMovementDB, type Product, type Sale, type SaleItem } from "@/lib/db";
+import {
+  ProductDB,
+  SaleDB,
+  StockMovementDB,
+  type Product,
+  type Sale,
+  type SaleItem,
+} from "@/lib/db";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
 import { Separator } from "@/components/ui/separator";
@@ -35,11 +48,13 @@ interface CartItem extends SaleItem {
 
 // Format price in MMK
 const formatMMK = (amount: number) => {
-  return new Intl.NumberFormat("my-MM", {
-    style: "decimal",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount) + " MMK";
+  return (
+    new Intl.NumberFormat("my-MM", {
+      style: "decimal",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount) + " MMK"
+  );
 };
 
 export function SalesTerminal() {
@@ -53,14 +68,41 @@ export function SalesTerminal() {
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [sales, setSales] = useState<any[]>([]);
+
+  useEffect(() => {
+    const loadSales = async () => {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("sale errors:",error);
+        return;
+      }
+
+      setSales(data || []);
+      setIsLoading(false);
+    };
+
+    loadSales();
+  }, []);
   useEffect(() => {
     loadProducts();
-  }, []);
+  },[]);
 
   const loadProducts = async () => {
-    const allProducts = await ProductDB.getAll();
-    setProducts(allProducts.filter((p) => p.stock > 0));
-    setIsLoading(false);
+    const { data, error } = await supabase
+      .from("products")
+      .select("*")
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    setProducts(data || []);
   };
 
   const filteredProducts = products.filter(
@@ -99,22 +141,23 @@ export function SalesTerminal() {
   }, []);
 
   const updateQuantity = (productId: string, delta: number) => {
-    setCart((prev) =>
-      prev
-        .map((item) => {
-          if (item.productId === productId) {
-            const newQuantity = item.quantity + delta;
-            if (newQuantity <= 0) return null;
-            if (newQuantity > item.maxStock) return item;
-            return {
-              ...item,
-              quantity: newQuantity,
-              total: newQuantity * item.price,
-            };
-          }
-          return item;
-        })
-        .filter(Boolean) as CartItem[]
+    setCart(
+      (prev) =>
+        prev
+          .map((item) => {
+            if (item.productId === productId) {
+              const newQuantity = item.quantity + delta;
+              if (newQuantity <= 0) return null;
+              if (newQuantity > item.maxStock) return item;
+              return {
+                ...item,
+                quantity: newQuantity,
+                total: newQuantity * item.price,
+              };
+            }
+            return item;
+          })
+          .filter(Boolean) as CartItem[]
     );
   };
 
@@ -136,7 +179,6 @@ export function SalesTerminal() {
     if (!user) return;
 
     const sale: Sale = {
-
       id: crypto.randomUUID(),
       items: cart.map(({ productId, productName, quantity, price, total }) => ({
         productId,
@@ -149,7 +191,8 @@ export function SalesTerminal() {
       tax: 0,
       total,
       paymentMethod,
-      cashReceived: paymentMethod === "cash" ? parseFloat(cashReceived) : undefined,
+      cashReceived:
+        paymentMethod === "cash" ? parseFloat(cashReceived) : undefined,
       change: paymentMethod === "cash" ? change : undefined,
       userId: user.id,
       userName: user.name,
@@ -158,39 +201,33 @@ export function SalesTerminal() {
 
     await supabase.from("orders").insert({
       id: sale.id,
-      total:sale.total,
-      payment_method:sale.paymentMethod,
-      user_id:sale.userId,
-      created_at:sale.createdAt,
+      total: sale.total,
+      payment_method: sale.paymentMethod,
+      customer_name: sale.userName,
+      created_at: sale.createdAt.toISOString(),
     });
 
-    await supabase.from("orders_item").insert(
+    await supabase.from("order_items").insert(
       cart.map((item) => ({
-      order_id: sale.id,
-      product_id:item.productId,
-      quantity:item.quantity,
-      price:item.price
-    }))
+        order_id: sale.id,
+        product_id: item.productId,
+        quantity: item.quantity,
+        price: item.price,
+      }))
     );
-    
 
     // Save sale
-    await SaleDB.add(sale);
 
     // Update stock for each item and create stock movements
     for (const item of cart) {
-      await ProductDB.updateStock(item.productId, -item.quantity);
-      await StockMovementDB.add({
-        id: crypto.randomUUID(),
-        productId: item.productId,
-        productName: item.productName,
-        type: "out",
-        quantity: item.quantity,
-        reason: `Sale #${sale.id.slice(0, 8)}`,
-        userId: user.id,
-        userName: user.name,
-        createdAt: new Date(),
-      });
+      for (const item of cart) {
+        await supabase
+          .from("products")
+          .update({
+            stock: item.maxStock - item.quantity,
+          })
+          .eq("id", item.productId);
+      }
     }
 
     setCompletedSale(sale);
@@ -247,7 +284,9 @@ export function SalesTerminal() {
                   <h3 className="font-medium text-sm line-clamp-2 mb-2">
                     {product.name}
                   </h3>
-                  <p className="text-lg font-bold">{formatMMK(product.price)}</p>
+                  <p className="text-lg font-bold">
+                    {formatMMK(product.price)}
+                  </p>
                 </CardContent>
               </Card>
             ))}
@@ -255,9 +294,13 @@ export function SalesTerminal() {
           {filteredProducts.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <ShoppingCart className="h-12 w-12 text-muted-foreground/50" />
-              <h3 className="mt-4 text-lg font-medium">No products available</h3>
+              <h3 className="mt-4 text-lg font-medium">
+                No products available
+              </h3>
               <p className="text-muted-foreground">
-                {searchQuery ? "Try a different search term" : "Add products to your inventory"}
+                {searchQuery
+                  ? "Try a different search term"
+                  : "Add products to your inventory"}
               </p>
             </div>
           )}

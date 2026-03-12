@@ -1,5 +1,5 @@
 "use client";
-
+import { supabase } from "@/lib/supabase";
 import { useState, useEffect } from "react";
 import { ProductDB, type Product } from "@/lib/db";
 import { useAuth } from "@/lib/auth-context";
@@ -103,8 +103,16 @@ export function ProductManagement() {
   }, []);
 
   const loadProducts = async () => {
-    const allProducts = await ProductDB.getAll();
-    setProducts(allProducts);
+    const { data, error } = await supabase
+      .from("products")
+      .select("*");
+  
+    if (error) {
+      console.error(error);
+    } else {
+      setProducts(data || []);
+    }
+  
     setIsLoading(false);
   };
 
@@ -134,13 +142,13 @@ export function ProductManagement() {
       setFormData(initialFormData);
     }
     setIsDialogOpen(true);
+    console.log("add product clicked")
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    const productData: Product = {
-      id: editingProduct?.id || crypto.randomUUID(),
+  
+    const productData = {
       name: formData.name,
       sku: formData.sku,
       category: formData.category,
@@ -148,23 +156,27 @@ export function ProductManagement() {
       stock: parseInt(formData.stock),
       minStock: parseInt(formData.minStock),
       description: formData.description,
-      createdAt: editingProduct?.createdAt || new Date(),
-      updatedAt: new Date(),
     };
-
-    if (editingProduct) {
-      await ProductDB.update(productData);
+const { data,error } = await supabase
+      .from("products")
+      .insert([productData])
+      .select();
+  
+    if (error) {
+      console.log(error);
     } else {
-      await ProductDB.add(productData);
+      console.log("Product added");
+      loadProducts();
     }
-
+  
     setIsDialogOpen(false);
-    loadProducts();
   };
-
   const handleDelete = async () => {
     if (deleteProduct) {
-      await ProductDB.remove(deleteProduct.id);
+      await supabase
+      .from("products")
+      .delete()
+      .eq("id", deleteProduct.id);
       setDeleteProduct(null);
       loadProducts();
     }
